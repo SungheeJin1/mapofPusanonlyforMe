@@ -47,7 +47,7 @@ def run(query: str) -> bytes:
             with urllib.request.urlopen(req, timeout=300) as r:
                 return r.read()
         except Exception as e:  # network hiccups / rate limits
-            wait = 30
+            wait = 300
             print(f"  attempt {attempt + 1} failed ({e}); retrying in {wait}s", file=sys.stderr)
             time.sleep(wait)
     raise SystemExit("Overpass request failed")
