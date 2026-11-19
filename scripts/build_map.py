@@ -21,6 +21,7 @@ COLORS = {
     "land": "#F8F3E3",       # 연한 미색
     "land_edge": "#E6DCC2",
     "sea": "#CFE6F3",        # 연한 하늘색
+    "shallow": "#E4F2FA",    # pale band along the shore
     "bus": "#A6DC4A",        # 연두색
     "1": "#F06A00",          # 부산 도시철도 1호선
     "2": "#81BF48",          # 2호선
@@ -88,7 +89,36 @@ def build_land():
         verdict = classify(face, directed)
         if verdict:
             land.append(face)
-    return unary_union(land)
+    land = unary_union(land)
+    water = build_water(elements)
+    if not water.is_empty:
+        land = land.difference(water.buffer(0.3))
+    return land
+
+
+def build_water(elements, min_area=400.0):
+    """Large inland water surfaces (rivers such as the Nakdong), in px space.
+    Small ponds (< min_area px^2) are dropped to keep the map clean."""
+    polys = []
+    for el in elements:
+        t = el.get("tags", {})
+        is_water = t.get("natural") == "water" or t.get("waterway") == "riverbank"
+        if not is_water:
+            continue
+        if el["type"] == "way" and "geometry" in el:
+            pts = [proj(p["lon"], p["lat"]) for p in el["geometry"]]
+            if len(pts) >= 4 and pts[0] == pts[-1]:
+                polys.append(Polygon(pts).buffer(0))
+        elif el["type"] == "relation":
+            rings = {"outer": [], "inner": []}
+            for m in el.get("members", []):
+                if m["type"] == "way" and "geometry" in m:
+                    rings["inner" if m.get("role") == "inner" else "outer"].append(geom_to_line(m["geometry"]))
+            outer = unary_union(list(polygonize(unary_union(rings["outer"])))) if rings["outer"] else Polygon()
+            inner = unary_union(list(polygonize(unary_union(rings["inner"])))) if rings["inner"] else Polygon()
+            polys.append(outer.difference(inner))
+    polys = [p for p in polys if p.area >= min_area]
+    return unary_union(polys) if polys else Polygon()
 
 
 def key(p):
@@ -195,6 +225,9 @@ def main():
     lw = WIDTH / 1000  # line-width unit
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" width="{WIDTH}" height="{HEIGHT}">
   <defs>
+    <filter id="soft" x="-5%" y="-5%" width="110%" height="110%">
+      <feGaussianBlur stdDeviation="{5 * lw:.1f}"/>
+    </filter>
     <filter id="relief" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
       <!-- broad soft shadow cast below/right of the land -->
       <feGaussianBlur in="SourceAlpha" stdDeviation="{6 * lw:.1f}" result="b1"/>
@@ -222,6 +255,8 @@ def main():
     </filter>
   </defs>
   <rect width="{WIDTH}" height="{HEIGHT}" fill="{COLORS['sea']}"/>
+  <!-- shallow-water halo: a pale band hugging the shore -->
+  <path d="{land_d}" fill="none" stroke="{COLORS['shallow']}" stroke-width="{16 * lw:.1f}" stroke-linejoin="round" filter="url(#soft)"/>
   <path d="{land_d}" fill="{COLORS['land']}" fill-rule="evenodd" stroke="{COLORS['land_edge']}" stroke-width="{0.6 * lw:.2f}" filter="url(#relief)"/>
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
     <path d="{bus_d}" stroke="{COLORS['bus']}" stroke-width="{2.6 * lw:.2f}"/>
