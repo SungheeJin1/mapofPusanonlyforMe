@@ -1,0 +1,7 @@
+[out:json][timeout:180];
+area["name"="부산광역시"]["admin_level"="4"]->.busan;
+(
+  relation["route"="bus"](area.busan);
+  relation["type"="route_master"]["route_master"="bus"](area.busan);
+);
+out tags;
