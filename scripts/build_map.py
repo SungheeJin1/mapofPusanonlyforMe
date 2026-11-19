@@ -184,6 +184,14 @@ def build_routes():
                 target[m["ref"]] = geom_to_line(m["geometry"])
     for f in sorted(found, key=str):
         print("  route:", *f)
+
+    # Road-following bus lines built from the BIMS stop lists replace the OSM ones.
+    routed = DATA / "bus_routes.json"
+    if routed.exists():
+        lines = [ln for lns in json.loads(routed.read_text()).values() for ln in lns if len(ln) > 1]
+        if lines:
+            bus = {f"api{i}": LineString([proj(lon, lat) for lon, lat in ln]) for i, ln in enumerate(lines)}
+            print(f"  bus: {len(lines)} road-following lines from bus_routes.json")
     return subway, bus
 
 
