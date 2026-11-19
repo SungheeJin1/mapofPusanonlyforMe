@@ -61,6 +61,27 @@ def pick(d, *names):
     return None
 
 
+_stop_cache = {}
+
+
+def stop_position(nodeid, arsno, name):
+    """(lat, lon) of a stop, via busStopList searched by ARS number or name."""
+    if nodeid in _stop_cache:
+        return _stop_cache[nodeid]
+    queries = ([{"arsno": arsno}] if arsno else []) + ([{"bstopnm": name}] if name else [])
+    for q in queries:
+        raw = call("busStopList", **q)
+        if not (RAW / "busStopList_sample.xml").exists():
+            (RAW / "busStopList_sample.xml").write_bytes(raw)
+        for it in items(raw):
+            lat, lon = pick(it, "gpsy", "lat", "y"), pick(it, "gpsx", "lin", "lng", "x")
+            if lat and lon:
+                _stop_cache.setdefault(pick(it, "bstopid", "nodeid"), (float(lat), float(lon)))
+        if nodeid in _stop_cache:
+            return _stop_cache[nodeid]
+    return None
+
+
 def main():
     RAW.mkdir(parents=True, exist_ok=True)
     out = {}
@@ -77,12 +98,16 @@ def main():
             raw = call("busInfoByRouteId", lineid=lineid)
             (RAW / f"busInfoByRouteId_{lineid}.xml").write_bytes(raw)
             stops = []
+            # The route list gives stop ids only (its lat/lin are live bus
+            # positions), so look each stop's coordinates up separately.
             for s in items(raw):
-                lat, lon = pick(s, "lat", "gpsy", "y"), pick(s, "lin", "lng", "gpsx", "x")
-                if lat and lon:
-                    stops.append({"idx": int(pick(s, "bstopidx", "idx") or len(stops) + 1),
-                                  "name": pick(s, "bstopnm", "nodenm") or "",
-                                  "lat": float(lat), "lon": float(lon)})
+                pos = stop_position(s.get("nodeid"), s.get("arsno"), s.get("bstopnm"))
+                if pos:
+                    stops.append({"idx": int(s.get("bstopidx") or len(stops) + 1), "name": s.get("bstopnm", ""),
+                                  "nodeid": s.get("nodeid"), "rpoint": s.get("rpoint") == "1",
+                                  "lat": pos[0], "lon": pos[1]})
+                else:
+                    print(f"  no position for stop {s.get('bstopnm')} ({s.get('nodeid')})", file=sys.stderr)
             stops.sort(key=lambda s: s["idx"])
             out[lineno].append({"lineid": lineid, "name": pick(line, "buslinenum", "lineno"), "stops": stops})
         print(f"{lineno}: " + ", ".join(f"{l['lineid']} ({len(l['stops'])} stops)" for l in out[lineno]) or f"{lineno}: not found")
