@@ -1,0 +1,9 @@
+[out:json][timeout:180];
+area["name"="부산광역시"]["admin_level"="4"]->.busan;
+(
+  way["natural"="coastline"](34.95,128.70,35.45,129.36);
+  relation["type"="route"]["route"="subway"]["ref"~"^[123]$"](area.busan);
+  relation["type"="route"]["route"="subway"]["name"~"[123]호선"](area.busan);
+  relation["type"="route"]["route"="bus"]["ref"~"^(금정7|77|100-1|80|31|189)$"](area.busan);
+);
+out geom;

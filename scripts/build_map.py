@@ -52,15 +52,26 @@ def geom_to_line(geom):
     return LineString([proj(p["lon"], p["lat"]) for p in geom])
 
 
+def load_elements(*names):
+    """Elements from data/busan_osm.json (one combined Overpass export) if it
+    exists, otherwise from the given per-part files written by fetch_osm.py."""
+    combined = DATA / "busan_osm.json"
+    files = [combined] if combined.exists() else [DATA / n for n in names]
+    out = []
+    for f in files:
+        out += json.loads(f.read_text())["elements"]
+    return out
+
+
 # ---------------------------------------------------------------- land / sea
 def build_land():
-    data = json.loads((DATA / "coastline.json").read_text())
+    elements = load_elements("coastline.json")
     frame = box(0, 0, WIDTH, HEIGHT)
 
     directed = set()   # directed coastline segments (land lies on the left)
     lines = []
-    for el in data["elements"]:
-        if el["type"] != "way" or "geometry" not in el:
+    for el in elements:
+        if el["type"] != "way" or "geometry" not in el or el.get("tags", {}).get("natural") != "coastline":
             continue
         pts = [proj(p["lon"], p["lat"]) for p in el["geometry"]]
         for a, b in zip(pts, pts[1:]):
@@ -112,11 +123,11 @@ def classify(face: Polygon, directed):
 
 # ---------------------------------------------------------------- routes
 def build_routes():
-    data = json.loads((DATA / "routes.json").read_text())
+    elements = load_elements("routes.json")
     subway = {"1": {}, "2": {}, "3": {}}
     bus = {}
     found = []
-    for rel in data["elements"]:
+    for rel in elements:
         if rel["type"] != "relation":
             continue
         t = rel.get("tags", {})
