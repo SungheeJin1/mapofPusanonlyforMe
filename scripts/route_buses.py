@@ -75,7 +75,7 @@ class Graph:
     def snap(self, x, y, skip=0):
         """Insert a node on the (skip+1)-th nearest road segment to (x, y)."""
         p = Point(x, y)
-        cand = self.tree.query(p.buffer(60))
+        cand = self.tree.query(p.buffer(150))
         cand = sorted(cand, key=lambda i: self.segs[i].distance(p))
         if len(cand) <= skip:
             return None
