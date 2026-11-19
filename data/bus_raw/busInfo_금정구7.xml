@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+
+<response>
+<header>
+<resultCode>00</resultCode>
+<resultMsg>NORMAL SERVICE</resultMsg>
+</header>
+<body>
+<items>
+<item>
+<lineid>5291107000</lineid>
+<buslinenum>금정구7</buslinenum>
+<bustype>마을버스</bustype>
+<startpoint>부산대역</startpoint>
+<endpoint>부산대학교</endpoint>
+<companyid>대영버스㈜</companyid>
+<headway>7</headway>
+<firsttime>05:57</firsttime>
+<endtime>20:00</endtime>
+<headwaypeak>10</headwaypeak>
+<headwaynorm>10</headwaynorm>
+<headwayholi>10</headwayholi>
+</item>
+</items>
+</body>
+</response>
