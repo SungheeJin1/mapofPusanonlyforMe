@@ -4,6 +4,7 @@ Input:  data/coastline.json, data/routes.json  (from fetch_osm.py)
 Output: busan_map.svg
 """
 import json
+import re
 import math
 import pathlib
 
@@ -29,6 +30,8 @@ COLORS = {
 }
 
 BUS_REFS = {"금정7", "77", "100-1", "80", "31", "189"}
+# many Busan bus relations have no ref, only a name like "부산버스 100-1"
+BUS_NAME = re.compile(r"(^|버스 ?)(금정 ?7|77|100-1|80|31|189)( |$|\()")
 
 
 # ---------------------------------------------------------------- projection
@@ -171,7 +174,7 @@ def build_routes():
             if line is None:
                 continue
             target = subway[line]
-        elif t.get("route") == "bus" and ref in BUS_REFS:
+        elif t.get("route") == "bus" and (ref in BUS_REFS or BUS_NAME.search(t.get("name", ""))):
             target = bus
         else:
             continue

@@ -9,5 +9,6 @@ area["name"="부산광역시"]["admin_level"="4"]->.busan;
   relation["type"="route"]["route"="subway"]["ref"~"^[123]$"](area.busan);
   relation["type"="route"]["route"="subway"]["name"~"[123]호선"](area.busan);
   relation["type"="route"]["route"="bus"]["ref"~"^(금정7|77|100-1|80|31|189)$"](area.busan);
+  relation["type"="route"]["route"="bus"]["name"~"(^|버스 ?)(금정 ?7|77|100-1|80|31|189)( |$|\\()"](area.busan);
 );
 out geom;
