@@ -7,7 +7,8 @@ Between consecutive stops the bus takes the cheapest path on the OSM road
 graph (respecting one-way streets; main roads are preferred over side
 streets). Each stop is snapped onto the nearest road segment: buses stop on
 the right-hand kerb, so the nearest carriageway is normally the one the bus
-drives on.
+drives on. Service roads (e.g. inside the Pusan National University campus,
+which 금정7 loops through) are used only when no ordinary road is near.
 """
 import gzip
 import heapq
@@ -48,7 +49,7 @@ class Graph:
         self.adj = {}       # node -> list of (cost, node)
         self.xy = {}        # node -> (x, y) metres
         ids = {}
-        segs, self.seg_info = [], []
+        segs, self.seg_info, self.seg_penalty = [], [], []
         for hw, oneway, coords in roads:
             k = COST.get(hw, 2.0)
             pts = [m(*c) for c in coords]
@@ -65,9 +66,10 @@ class Graph:
                     self.adj.setdefault(a, []).append((d, b))
                 if oneway in ("no", "-1", "false", "0"):
                     self.adj.setdefault(b, []).append((d, a))
-                if hw not in ("service", "living_street"):   # never snap stops onto these
-                    segs.append(LineString([self.xy[a], self.xy[b]]))
-                    self.seg_info.append((a, b, k, oneway))
+                segs.append(LineString([self.xy[a], self.xy[b]]))
+                self.seg_info.append((a, b, k, oneway))
+                # minor roads (campus/estate driveways) only win a stop when no real road is close
+                self.seg_penalty.append(30.0 if hw in ("service", "living_street") else 0.0)
         self.tree = STRtree(segs)
         self.segs = segs
         self.next_id = len(ids)
@@ -76,7 +78,7 @@ class Graph:
         """Insert a node on the (skip+1)-th nearest road segment to (x, y)."""
         p = Point(x, y)
         cand = self.tree.query(p.buffer(150))
-        cand = sorted(cand, key=lambda i: self.segs[i].distance(p))
+        cand = sorted(cand, key=lambda i: self.segs[i].distance(p) + self.seg_penalty[i])
         if len(cand) <= skip:
             return None
         i = cand[skip]
@@ -142,7 +144,36 @@ def route_line(g, stops):
             fallbacks += 1
             found = [(x1, y1), (x2, y2)]
         out.extend(found if not out else found[1:])
+    out = drop_spurs(out)
     return [list(map(lambda v: round(v, 6), ll(x, y))) for x, y in out], fallbacks
+
+
+def drop_spurs(pts, max_len=250.0):
+    """Remove short out-and-back spikes (where a stop was snapped just off the
+    through route): ... A, B, ..., B', A ... with the excursion under max_len."""
+    changed = True
+    while changed:
+        changed = False
+        out = [pts[0]]
+        i = 1
+        while i < len(pts):
+            p = pts[i]
+            # walk back over the recent points: if p returns close to an earlier
+            # point within a short excursion, cut the loop out
+            acc, j, cut = 0.0, len(out) - 1, None
+            while j > 0 and acc < max_len:
+                acc += math.dist(out[j], out[j - 1])
+                if math.dist(out[j - 1], p) < 3.0 and acc < max_len:
+                    cut = j - 1
+                j -= 1
+            if cut is not None:
+                del out[cut + 1:]
+                changed = True
+            else:
+                out.append(p)
+            i += 1
+        pts = out
+    return pts
 
 
 def main():

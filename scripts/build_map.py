@@ -15,7 +15,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 
 # Area shown on the map: west, south, east, north (degrees)
-VIEW = (128.76, 34.99, 129.31, 35.40)
+VIEW = (128.88, 35.03, 129.25, 35.37)  # urban Busan: Dadaepo-Yangsan, Daejeo-Songjeong
 WIDTH = 2400  # px
 
 COLORS = {
@@ -23,7 +23,7 @@ COLORS = {
     "land_edge": "#E6DCC2",
     "sea": "#CFE6F3",        # 연한 하늘색
     "shallow": "#E4F2FA",    # pale band along the shore
-    "bus": "#A6DC4A",        # 연두색
+    "bus": "#C2E66A",        # 연두색 (lighter than line 2 green)
     "1": "#F06A00",          # 부산 도시철도 1호선
     "2": "#81BF48",          # 2호선
     "3": "#BB8C00",          # 3호선
@@ -225,7 +225,10 @@ def lines_d(lines):
 
 def main():
     print("building land ...")
-    land = build_land().simplify(0.35, preserve_topology=True)
+    land = build_land()
+    # close hairline water slivers (narrow creeks tagged as coastline) that read as stray lines
+    land = land.buffer(2.5, join_style="mitre").buffer(-2.5, join_style="mitre")
+    land = land.simplify(0.35, preserve_topology=True)
     print("collecting routes ...")
     subway, bus = build_routes()
 
