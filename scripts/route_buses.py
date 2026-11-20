@@ -148,31 +148,27 @@ def route_line(g, stops):
     return [list(map(lambda v: round(v, 6), ll(x, y))) for x, y in out], fallbacks
 
 
-def drop_spurs(pts, max_len=250.0):
-    """Remove short out-and-back spikes (where a stop was snapped just off the
-    through route): ... A, B, ..., B', A ... with the excursion under max_len."""
-    changed = True
-    while changed:
-        changed = False
-        out = [pts[0]]
-        i = 1
-        while i < len(pts):
-            p = pts[i]
-            # walk back over the recent points: if p returns close to an earlier
-            # point within a short excursion, cut the loop out
-            acc, j, cut = 0.0, len(out) - 1, None
-            while j > 0 and acc < max_len:
-                acc += math.dist(out[j], out[j - 1])
-                if math.dist(out[j - 1], p) < 3.0 and acc < max_len:
-                    cut = j - 1
-                j -= 1
-            if cut is not None:
-                del out[cut + 1:]
-                changed = True
-            else:
-                out.append(p)
+def drop_spurs(pts, max_len=150.0, tol=5.0):
+    """Remove short out-and-back spikes: where a stop was snapped onto a side
+    street or the far carriageway, the path runs in and straight back out.
+
+    A spike is a U-turn whose retraced part is shorter than max_len. Longer
+    out-and-back sections (real turnarounds, e.g. 금정7's campus loop) stay."""
+    pts = list(pts)
+    i = 1
+    while i < len(pts) - 1:
+        a, b = i - 1, i + 1
+        length = 0.0
+        while a >= 0 and b < len(pts) and math.dist(pts[a], pts[b]) < tol:
+            length += math.dist(pts[a], pts[a + 1])
+            a -= 1
+            b += 1
+        if a < i - 1 and length < max_len:
+            # pts[a+1] and pts[b-1] coincide; drop everything between
+            del pts[a + 2:b]
+            i = max(a + 1, 1)
+        else:
             i += 1
-        pts = out
     return pts
 
 

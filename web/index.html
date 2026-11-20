@@ -1,0 +1,718 @@
+<meta charset="utf-8">
+<title>나만의 부산 노선도</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one full-screen canvas map; a floating title chip top-left, zoom buttons right,
+   and a bottom sheet holding the route chips and the selected route's stop list. */
+:root {
+  /* map colours: fixed in both themes (the map itself is the user's spec) */
+  --land: #F8F3E3;
+  --land-edge: #E2D7BA;
+  --sea: #CFE6F3;
+  --shallow: #E4F2FA;
+  --bus: #C2E66A;
+  --bus-ink: #557A1C;
+  --bus-text: #2C430B;
+  --line1: #F06A00;
+  --line2: #81BF48;
+  --line3: #BB8C00;
+  --label: #3A372E;
+  /* interface chrome */
+  --panel: rgba(255, 253, 247, 0.94);
+  --panel-solid: #FFFDF7;
+  --ink: #2B2A24;
+  --ink-soft: #6E6A5C;
+  --rule: #E7E0CC;
+  --chip: #F2EDDD;
+  --chip-on: #2B2A24;
+  --chip-on-ink: #FFFDF7;
+  --focus: #557A1C;
+  --shadow: 0 6px 24px rgba(52, 46, 25, 0.16);
+  --font: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --panel: rgba(30, 31, 28, 0.92);
+    --panel-solid: #1E1F1C;
+    --ink: #F1EDE0;
+    --ink-soft: #ABA694;
+    --rule: #3A3A33;
+    --chip: #2C2D28;
+    --chip-on: #F1EDE0;
+    --chip-on-ink: #1E1F1C;
+    --focus: #C2E66A;
+    --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --panel: rgba(30, 31, 28, 0.92);
+  --panel-solid: #1E1F1C;
+  --ink: #F1EDE0;
+  --ink-soft: #ABA694;
+  --rule: #3A3A33;
+  --chip: #2C2D28;
+  --chip-on: #F1EDE0;
+  --chip-on-ink: #1E1F1C;
+  --focus: #C2E66A;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  background: var(--sea);
+  color: var(--ink);
+  font-family: var(--font);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+#app { position: relative; height: 100%; }
+#map {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: block; touch-action: none; cursor: grab;
+}
+#map.dragging { cursor: grabbing; }
+
+.title {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  left: max(16px, env(safe-area-inset-left, 0px));
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 12px;
+  padding: 8px 12px;
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 2px;
+  pointer-events: none;
+}
+.title h1 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
+.title p { margin: 0; font-size: 11.5px; color: var(--ink-soft); }
+
+.zoom {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.zoom button {
+  width: 40px; height: 40px; border: 0; background: transparent;
+  color: var(--ink); font: 600 20px/1 var(--font); cursor: pointer;
+}
+.zoom button + button { border-top: 1px solid var(--rule); }
+.zoom button.fit { font-size: 13px; }
+.zoom button:focus-visible, .chip:focus-visible, .stop-row:focus-visible, .close:focus-visible {
+  outline: 2px solid var(--focus); outline-offset: -2px;
+}
+
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: flex; flex-direction: column;
+  max-height: 38%;
+}
+.chips {
+  display: flex; gap: 6px;
+  overflow-x: auto;
+  padding-block: 12px 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 12px;
+  border-radius: 999px; border: 0;
+  background: var(--chip); color: var(--ink);
+  font: 600 13px/1 var(--font);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.chip .sw { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.chip .sw.bus { background: var(--bus); box-shadow: inset 0 0 0 1.5px var(--bus-ink); border-radius: 3px; }
+.chip[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); }
+.chip.sep { margin-left: 4px; }
+
+.detail {
+  border-top: 1px solid var(--rule);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.detail-head {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding-block: 12px 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.badge {
+  flex: none;
+  min-width: 40px; height: 28px; padding: 0 8px;
+  border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 700 14px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+.badge.bus { background: var(--bus); color: var(--bus-text); box-shadow: inset 0 0 0 1.5px var(--bus-ink); }
+.badge.sub { color: #fff; border-radius: 999px; min-width: 28px; }
+.detail-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.detail-text strong { font-size: 14.5px; font-weight: 600; text-wrap: balance; }
+.detail-text span { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.close {
+  flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%;
+  background: var(--chip); color: var(--ink); font: 500 18px/1 var(--font); cursor: pointer;
+}
+.stops {
+  list-style: none; margin: 0;
+  padding-block: 0 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  overflow-y: auto;
+  min-height: 0;
+}
+.stop-row {
+  display: grid; grid-template-columns: 28px 14px 1fr; align-items: center; gap: 8px;
+  width: 100%; border: 0; background: transparent; color: var(--ink);
+  padding: 6px 0; text-align: left; cursor: pointer;
+  font: 400 13.5px/1.35 var(--font);
+}
+.stop-row .idx { color: var(--ink-soft); font-size: 11.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.stop-row .dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 2px var(--bus-ink); justify-self: center; }
+.stop-row.major .name { font-weight: 600; }
+.stop-row.end .dot { background: var(--bus-ink); }
+.stop-row .tag { margin-left: 6px; font-size: 11px; color: var(--bus-ink); font-weight: 600; }
+.stop-row .xfer { margin-left: 6px; font-size: 11px; color: var(--ink-soft); }
+.hint {
+  margin: 0;
+  padding-block: 0 12px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-size: 12px; color: var(--ink-soft);
+}
+.loading {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 13px; color: #557A1C; pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="app">
+  <canvas id="map" aria-label="부산 지도: 도시철도 1·2·3호선과 버스 금정7, 77, 100-1, 80, 31, 189번 노선" role="img"></canvas>
+  <div class="loading" id="loading">지도 불러오는 중…</div>
+
+  <div class="title">
+    <h1>나만의 부산 노선도</h1>
+    <p>도시철도 1·2·3호선 · 버스 6개 노선</p>
+  </div>
+
+  <div class="zoom" role="group" aria-label="지도 확대·축소">
+    <button type="button" id="zoom-in" aria-label="확대">+</button>
+    <button type="button" id="zoom-out" aria-label="축소">−</button>
+    <button type="button" id="zoom-fit" class="fit" aria-label="전체 보기">전체</button>
+  </div>
+
+  <section class="sheet" aria-label="노선">
+    <div class="chips" id="chips" role="toolbar" aria-label="노선 선택"></div>
+    <div class="detail" id="detail" hidden>
+      <div class="detail-head">
+        <span class="badge" id="d-badge"></span>
+        <div class="detail-text">
+          <strong id="d-title"></strong>
+          <span id="d-sub"></span>
+        </div>
+        <button type="button" class="close" id="d-close" aria-label="선택 해제">×</button>
+      </div>
+      <ol class="stops" id="d-stops"></ol>
+    </div>
+    <p class="hint" id="hint">노선을 누르면 정류장 순서가 나옵니다. 지도를 확대하면 모든 정류장 이름이 보입니다.</p>
+  </section>
+</div>
+
+<script>
+(() => {
+  const css = getComputedStyle(document.documentElement);
+  const C = name => css.getPropertyValue(name).trim();
+  const COL = {
+    land: C('--land'), edge: C('--land-edge'), sea: C('--sea'), shallow: C('--shallow'),
+    bus: C('--bus'), busInk: C('--bus-ink'), busText: C('--bus-text'), label: C('--label'),
+    sub: { '1': C('--line1'), '2': C('--line2'), '3': C('--line3') },
+  };
+  const FONT = C('--font');
+
+  const canvas = document.getElementById('map');
+  const ctx = canvas.getContext('2d');
+  let D = null;                 // map data
+  let P = {};                   // Path2D objects
+  let W = 0, H = 0, DPR = 1;
+  const view = { cx: 0, cy: 0, s: 1 };   // centre (map px) and scale (screen px per map px)
+  let fitScale = 1;
+  let selected = null;          // {kind:'bus'|'sub', id}
+  let hiQ = 0;                  // timer for full-quality redraw
+
+  // ---------- data ----------
+  fetch('map-data.json')
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(init)
+    .catch(err => {
+      document.getElementById('loading').textContent = '지도 데이터를 불러오지 못했습니다. 새로고침해 보세요. (' + err.message + ')';
+    });
+
+  function init(data) {
+    D = data;
+    P.land = new Path2D(D.land);
+    P.sub = {};
+    for (const k of Object.keys(D.subway)) P.sub[k] = new Path2D(D.subway[k].d);
+    P.bus = {};
+    for (const b of D.buses) P.bus[b.no] = new Path2D(b.d);
+    for (const s of D.stops) s.r = s.r || [];
+    document.getElementById('loading').hidden = true;
+    buildChips();
+    resize();
+    fit(false);
+    draw(true);
+  }
+
+  // ---------- view ----------
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2.5);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  }
+  function sheetH() { return document.querySelector('.sheet').getBoundingClientRect().height; }
+  function bounds() {
+    // the extent of all routes, so the first view shows every line
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
+    for (const s of D.stops) add(s.x, s.y);
+    for (const k in D.subway) for (const p of D.subway[k].samples) add(p[0], p[1]);
+    return [x0, y0, x1, y1];
+  }
+  function fit(animate) {
+    const [x0, y0, x1, y1] = selected ? selBounds() : bounds();
+    const top = 70, bottom = sheetH() + 16, side = 24;
+    const s = Math.min((W - side * 2) / (x1 - x0 || 1), (H - top - bottom) / (y1 - y0 || 1));
+    const target = { s: Math.min(s, 12), cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - (top - bottom) / 2 / Math.min(s, 12) };
+    if (!selected) fitScale = target.s;
+    flyTo(target, animate);
+  }
+  function selBounds() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const pts = selected.kind === 'bus'
+      ? D.buses.find(b => b.no === selected.id).samples
+      : D.subway[selected.id].samples;
+    for (const p of pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+    if (selected.kind === 'bus') for (const i of D.buses.find(b => b.no === selected.id).stops) {
+      const s = D.stops[i]; x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y);
+    }
+    return [x0, y0, x1, y1];
+  }
+  let anim = 0;
+  function flyTo(t, animate) {
+    cancelAnimationFrame(anim);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!animate || reduce) { Object.assign(view, t); draw(true); return; }
+    const from = { ...view }, t0 = performance.now(), dur = 420;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      const ls = Math.log(from.s) + (Math.log(t.s) - Math.log(from.s)) * e;
+      view.s = Math.exp(ls);
+      view.cx = from.cx + (t.cx - from.cx) * e;
+      view.cy = from.cy + (t.cy - from.cy) * e;
+      draw(k === 1);
+      if (k < 1) anim = requestAnimationFrame(step);
+    };
+    anim = requestAnimationFrame(step);
+  }
+  const toScreen = (x, y) => [(x - view.cx) * view.s + W / 2, (y - view.cy) * view.s + H / 2];
+  const toMap = (sx, sy) => [(sx - W / 2) / view.s + view.cx, (sy - H / 2) / view.s + view.cy];
+  function zoomAt(sx, sy, factor) {
+    const ns = Math.max(fitScale * 0.5, Math.min(fitScale * 40, view.s * factor));
+    const [mx, my] = toMap(sx, sy);
+    view.s = ns;
+    view.cx = mx - (sx - W / 2) / ns;
+    view.cy = my - (sy - H / 2) / ns;
+  }
+
+  // ---------- drawing ----------
+  let pending = false, pendingHQ = false;
+  function draw(hq) {
+    pendingHQ = pendingHQ || hq;
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      const q = pendingHQ; pendingHQ = false;
+      render(q);
+      clearTimeout(hiQ);
+      if (!q) hiQ = setTimeout(() => render(true), 140);
+    });
+  }
+
+  function render(hq) {
+    if (!D) return;
+    const s = view.s;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = COL.sea;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const k = DPR * s;
+    const base = () => ctx.setTransform(k, 0, 0, k, (W / 2 - view.cx * s) * DPR, (H / 2 - view.cy * s) * DPR);
+    base();
+    const px = v => v / s;   // screen px -> map units
+
+    // shallow-water halo along the shore
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = COL.shallow; ctx.lineWidth = px(14); ctx.stroke(P.land);
+    ctx.strokeStyle = 'rgba(234,246,252,0.9)'; ctx.lineWidth = px(6); ctx.stroke(P.land);
+
+    // land with its soft shadow below
+    ctx.save();
+    if (hq) {
+      ctx.shadowColor = 'rgba(70, 86, 98, 0.30)';
+      ctx.shadowBlur = 10 * DPR; ctx.shadowOffsetX = 2.5 * DPR; ctx.shadowOffsetY = 5 * DPR;
+    } else {
+      ctx.save(); ctx.translate(px(2.5), px(5)); ctx.fillStyle = 'rgba(70, 86, 98, 0.14)'; ctx.fill(P.land, 'evenodd'); ctx.restore();
+    }
+    ctx.fillStyle = COL.land; ctx.fill(P.land, 'evenodd');
+    ctx.restore();
+    ctx.save();
+    ctx.shadowColor = 'rgba(107, 98, 80, 0.32)'; ctx.shadowBlur = 1.5 * DPR; ctx.shadowOffsetX = 0.8 * DPR; ctx.shadowOffsetY = 1.6 * DPR;
+    ctx.strokeStyle = COL.edge; ctx.lineWidth = px(0.8); ctx.stroke(P.land);
+    ctx.restore();
+
+    const sel = selected;
+    const dimBus = sel && !(sel.kind === 'bus');
+    const dimSub = sel && !(sel.kind === 'sub');
+
+    // buses (under the subway)
+    ctx.globalAlpha = 1;
+    for (const b of D.buses) {
+      const on = sel && sel.kind === 'bus' && sel.id === b.no;
+      if (on) continue;
+      ctx.globalAlpha = sel ? (dimBus ? 0.35 : 0.3) : 1;
+      ctx.strokeStyle = COL.busInk; ctx.lineWidth = px(4.6); ctx.stroke(P.bus[b.no]);
+      ctx.strokeStyle = COL.bus; ctx.lineWidth = px(3.2); ctx.stroke(P.bus[b.no]);
+    }
+    ctx.globalAlpha = 1;
+
+    // subway: white casing + line colour
+    for (const n of ['3', '2', '1']) {
+      if (!P.sub[n]) continue;
+      const on = sel && sel.kind === 'sub' && sel.id === n;
+      ctx.globalAlpha = sel && !on ? 0.3 : 1;
+      ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = px(on ? 9 : 6.5); ctx.stroke(P.sub[n]);
+      ctx.strokeStyle = COL.sub[n]; ctx.lineWidth = px(on ? 6 : 4.2); ctx.stroke(P.sub[n]);
+    }
+    ctx.globalAlpha = 1;
+
+    // selected bus on top
+    if (sel && sel.kind === 'bus') {
+      const p = P.bus[sel.id];
+      ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = px(10); ctx.stroke(p);
+      ctx.strokeStyle = COL.busInk; ctx.lineWidth = px(7.5); ctx.stroke(p);
+      ctx.strokeStyle = COL.bus; ctx.lineWidth = px(5); ctx.stroke(p);
+    }
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    drawLabels();
+  }
+
+  // ---------- labels (screen space, greedy collision avoidance) ----------
+  const boxes = [];
+  const hit = (x0, y0, x1, y1) => {
+    for (const b of boxes) if (x0 < b[2] && x1 > b[0] && y0 < b[3] && y1 > b[1]) return true;
+    return false;
+  };
+  const textW = (t, size) => {
+    let w = 0;
+    for (const ch of t) w += /[ㄱ-힝]/.test(ch) ? size * 0.98 : (/[0-9]/.test(ch) ? size * 0.6 : size * 0.5);
+    return w;
+  };
+
+  function drawLabels() {
+    boxes.length = 0;
+    const z = view.s / fitScale;
+    const sel = selected;
+    const onScreen = (x, y, m = 40) => x > -m && y > -m && x < W + m && y < H + m;
+
+    // which stops are in play, and their marker positions
+    const selStops = sel && sel.kind === 'bus' ? new Set(D.buses.find(b => b.no === sel.id).stops) : null;
+    const stopsVis = [];
+    for (let i = 0; i < D.stops.length; i++) {
+      const st = D.stops[i];
+      if (selStops && !selStops.has(i)) continue;
+      if (sel && sel.kind === 'sub') continue;
+      const showMarker = st.p >= 2 || z >= 1.8 || selStops;
+      if (!showMarker) continue;
+      const [x, y] = toScreen(st.x, st.y);
+      if (!onScreen(x, y)) continue;
+      stopsVis.push({ st, x, y, i });
+    }
+    // markers reserve their space first
+    for (const v of stopsVis) {
+      const r = v.st.p === 3 ? 5 : 3.6;
+      boxes.push([v.x - r, v.y - r, v.x + r, v.y + r]);
+    }
+
+    // route-number badges along each line
+    const badges = [];
+    const drawBadgesFor = (pts, text, kind, colour, spacing) => {
+      let last = null;
+      for (const p of pts) {
+        const [x, y] = toScreen(p[0], p[1]);
+        if (!onScreen(x, y, -10)) { continue; }
+        if (last && Math.hypot(x - last[0], y - last[1]) < spacing) continue;
+        const size = 12;
+        const w = kind === 'sub' ? 22 : Math.max(26, textW(text, size) + 12), h = kind === 'sub' ? 22 : 20;
+        const b = [x - w / 2, y - h / 2, x + w / 2, y + h / 2];
+        if (hit(b[0] - 2, b[1] - 2, b[2] + 2, b[3] + 2)) continue;
+        boxes.push(b);
+        badges.push({ x, y, w, h, text, kind, colour });
+        last = [x, y];
+      }
+    };
+    const busList = sel && sel.kind === 'bus' ? D.buses.filter(b => b.no === sel.id) : (sel ? [] : D.buses);
+    const subList = sel && sel.kind === 'sub' ? [sel.id] : (sel ? [] : Object.keys(D.subway));
+    for (const n of subList) drawBadgesFor(D.subway[n].samples, n, 'sub', COL.sub[n], sel ? 200 : 260);
+    for (const b of busList) drawBadgesFor(b.samples, b.no, 'bus', COL.bus, sel ? 170 : 210);
+
+    // stop names: termini/turnarounds, then major stops, then the rest when zoomed in
+    const labelled = [];
+    const order = stopsVis.slice().sort((a, b) => b.st.p - a.st.p || b.st.r.length - a.st.r.length);
+    for (const v of order) {
+      const st = v.st;
+      if (!selStops && st.p === 1 && z < 2.6) continue;
+      if (selStops && st.p === 1 && z < 1.6) continue;
+      const size = st.p === 3 ? 12.5 : (st.p === 2 ? 12 : 11);
+      const w = textW(st.n, size), h = size + 2;
+      const r = st.p === 3 ? 6 : 5;
+      const spots = [
+        [v.x + r + 3, v.y - h / 2, 'left'], [v.x - r - 3 - w, v.y - h / 2, 'left'],
+        [v.x - w / 2, v.y - r - 3 - h, 'left'], [v.x - w / 2, v.y + r + 3, 'left'],
+      ];
+      for (const [lx, ly] of spots) {
+        if (lx < 4 || lx + w > W - 4) continue;
+        if (hit(lx - 1, ly - 1, lx + w + 1, ly + h + 1)) continue;
+        boxes.push([lx, ly, lx + w, ly + h]);
+        labelled.push({ x: lx, y: ly + h / 2, text: st.n, size, p: st.p });
+        break;
+      }
+    }
+
+    // paint: markers, badges, text
+    for (const v of stopsVis) {
+      const r = v.st.p === 3 ? 4.6 : 3.2;
+      ctx.beginPath(); ctx.arc(v.x, v.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = v.st.p === 3 ? COL.busInk : '#FFFFFF'; ctx.fill();
+      ctx.lineWidth = v.st.p === 3 ? 2 : 1.6;
+      ctx.strokeStyle = v.st.p === 3 ? '#FFFFFF' : COL.busInk; ctx.stroke();
+    }
+    for (const b of badges) {
+      ctx.beginPath();
+      if (b.kind === 'sub') {
+        ctx.arc(b.x, b.y, 11, 0, Math.PI * 2);
+        ctx.fillStyle = b.colour; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = `700 12.5px ${FONT}`;
+      } else {
+        roundRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, 6);
+        ctx.fillStyle = COL.bus; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = COL.busInk; ctx.stroke();
+        ctx.fillStyle = COL.busText;
+        ctx.font = `700 12px ${FONT}`;
+      }
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(b.text, b.x, b.y + 0.5);
+    }
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    for (const l of labelled) {
+      ctx.font = `${l.p >= 2 ? 600 : 500} ${l.size}px ${FONT}`;
+      ctx.lineWidth = 3.2; ctx.strokeStyle = 'rgba(255, 253, 247, 0.95)';
+      ctx.strokeText(l.text, l.x, l.y);
+      ctx.fillStyle = l.p === 1 ? '#57534A' : COL.label;
+      ctx.fillText(l.text, l.x, l.y);
+    }
+  }
+  function roundRect(x, y, w, h, r) {
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  // ---------- chips and detail ----------
+  const chipsEl = document.getElementById('chips');
+  function buildChips() {
+    const mk = (label, kind, id, swatch) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.dataset.kind = kind; b.dataset.id = id;
+      b.setAttribute('aria-pressed', 'false');
+      const sw = document.createElement('span');
+      sw.className = 'sw' + (kind === 'bus' ? ' bus' : '');
+      if (swatch) sw.style.background = swatch;
+      b.append(sw, document.createTextNode(label));
+      b.addEventListener('click', () => toggle(kind, id));
+      chipsEl.append(b);
+      return b;
+    };
+    for (const n of ['1', '2', '3']) if (D.subway[n]) mk(n + '호선', 'sub', n, COL.sub[n]);
+    D.buses.forEach((b, i) => { const c = mk(b.no, 'bus', b.no); if (i === 0) c.classList.add('sep'); });
+  }
+  function toggle(kind, id) {
+    if (selected && selected.kind === kind && selected.id === id) select(null);
+    else select({ kind, id });
+  }
+  function select(s) {
+    selected = s;
+    for (const c of chipsEl.children) {
+      c.setAttribute('aria-pressed', String(!!s && c.dataset.kind === s.kind && c.dataset.id === s.id));
+    }
+    renderDetail();
+    requestAnimationFrame(() => fit(true));
+  }
+  function renderDetail() {
+    const det = document.getElementById('detail');
+    const hint = document.getElementById('hint');
+    const list = document.getElementById('d-stops');
+    list.textContent = '';
+    if (!selected) { det.hidden = true; hint.hidden = false; return; }
+    det.hidden = false; hint.hidden = true;
+    const badge = document.getElementById('d-badge');
+    if (selected.kind === 'sub') {
+      const n = selected.id;
+      badge.className = 'badge sub'; badge.style.background = COL.sub[n]; badge.textContent = n;
+      document.getElementById('d-title').textContent = `부산 도시철도 ${n}호선`;
+      document.getElementById('d-sub').textContent = D.subway[n].ends;
+      return;
+    }
+    const b = D.buses.find(x => x.no === selected.id);
+    badge.className = 'badge bus'; badge.style.background = ''; badge.textContent = b.no;
+    document.getElementById('d-title').textContent = `${b.from} ↔ ${b.turn}`;
+    document.getElementById('d-sub').textContent = `정류장 ${b.stops.length}곳 · 한 바퀴 ${b.km} km · 회차 ${b.turn}`;
+    b.stops.forEach((i, k) => {
+      const st = D.stops[i];
+      const li = document.createElement('li');
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'stop-row' + (st.p >= 2 ? ' major' : '') + (st.p === 3 ? ' end' : '');
+      const idx = document.createElement('span'); idx.className = 'idx'; idx.textContent = k + 1;
+      const dot = document.createElement('span'); dot.className = 'dot';
+      const name = document.createElement('span'); name.className = 'name'; name.textContent = st.n;
+      if (k === 0) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = '기점'; name.append(t); }
+      else if (st.n === b.turn) { const t = document.createElement('span'); t.className = 'tag'; t.textContent = '회차'; name.append(t); }
+      const others = st.r.filter(r => r !== b.no);
+      if (others.length) { const t = document.createElement('span'); t.className = 'xfer'; t.textContent = '+ ' + others.join(', '); name.append(t); }
+      row.append(idx, dot, name);
+      row.addEventListener('click', () => flyTo({ cx: st.x, cy: st.y + (sheetH() - 70) / 2 / Math.max(view.s, fitScale * 4), s: Math.max(view.s, fitScale * 4) }, true));
+      li.append(row);
+      list.append(li);
+    });
+  }
+  document.getElementById('d-close').addEventListener('click', () => select(null));
+  document.getElementById('zoom-in').addEventListener('click', () => { const t = target(1.6); flyTo(t, true); });
+  document.getElementById('zoom-out').addEventListener('click', () => { const t = target(1 / 1.6); flyTo(t, true); });
+  document.getElementById('zoom-fit').addEventListener('click', () => fit(true));
+  function target(f) {
+    const s = Math.max(fitScale * 0.5, Math.min(fitScale * 40, view.s * f));
+    return { s, cx: view.cx, cy: view.cy };
+  }
+
+  // ---------- gestures ----------
+  const ptrs = new Map();
+  let gesture = null, moved = false, lastTap = 0;
+  canvas.addEventListener('pointerdown', e => {
+    canvas.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, [e.offsetX, e.offsetY]);
+    moved = false;
+    startGesture();
+    cancelAnimationFrame(anim);
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, [e.offsetX, e.offsetY]);
+    const g = gesture; if (!g) return;
+    const pts = [...ptrs.values()];
+    const c = centroid(pts), d = spread(pts);
+    if (Math.hypot(c[0] - g.c[0], c[1] - g.c[1]) > 4 || Math.abs(d - g.d) > 4) moved = true;
+    if (!moved) return;
+    canvas.classList.add('dragging');
+    const ns = pts.length > 1 && g.d > 0 ? Math.max(fitScale * 0.5, Math.min(fitScale * 40, g.s * d / g.d)) : g.s;
+    view.s = ns;
+    view.cx = g.m[0] - (c[0] - W / 2) / ns;
+    view.cy = g.m[1] - (c[1] - H / 2) / ns;
+    draw(false);
+  });
+  const end = e => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    canvas.classList.remove('dragging');
+    if (ptrs.size) { startGesture(); return; }
+    gesture = null;
+    if (!moved && e.type === 'pointerup') {
+      const now = performance.now();
+      if (now - lastTap < 300) { lastTap = 0; zoomTo(e.offsetX, e.offsetY, 2); return; }
+      lastTap = now;
+      tap(e.offsetX, e.offsetY);
+    }
+    draw(true);
+  };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+  function startGesture() {
+    const pts = [...ptrs.values()];
+    const c = centroid(pts);
+    gesture = { c, d: spread(pts), s: view.s, m: toMap(c[0], c[1]) };
+  }
+  const centroid = pts => [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length];
+  const spread = pts => pts.length < 2 ? 0 : Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]);
+  function zoomTo(sx, sy, f) {
+    const s = Math.max(fitScale * 0.5, Math.min(fitScale * 40, view.s * f));
+    const [mx, my] = toMap(sx, sy);
+    flyTo({ s, cx: mx - (sx - W / 2) / s, cy: my - (sy - H / 2) / s }, true);
+  }
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0018)));
+    draw(false);
+  }, { passive: false });
+
+  function tap(sx, sy) {
+    // nearest stop first, then a line under the finger
+    let best = null, bd = 16;
+    for (let i = 0; i < D.stops.length; i++) {
+      const st = D.stops[i];
+      const [x, y] = toScreen(st.x, st.y);
+      const d = Math.hypot(x - sx, y - sy);
+      if (d < bd) { bd = d; best = st; }
+    }
+    if (best && (best.p >= 2 || view.s / fitScale >= 1.8)) {
+      const r = best.r.length === 1 ? best.r[0] : null;
+      if (r && !(selected && selected.id === r)) { select({ kind: 'bus', id: r }); return; }
+    }
+    ctx.setTransform(DPR * view.s, 0, 0, DPR * view.s, (W / 2 - view.cx * view.s) * DPR, (H / 2 - view.cy * view.s) * DPR);
+    ctx.lineWidth = 18 / view.s;
+    const X = sx * DPR, Y = sy * DPR;
+    for (const n of ['1', '2', '3']) if (P.sub[n] && ctx.isPointInStroke(P.sub[n], X, Y)) { toggle('sub', n); return; }
+    for (const b of D.buses) if (ctx.isPointInStroke(P.bus[b.no], X, Y)) { toggle('bus', b.no); return; }
+    if (selected) select(null);
+  }
+
+  window.addEventListener('resize', () => { if (!D) return; resize(); draw(true); });
+  document.fonts && document.fonts.ready.then(() => draw(true));
+})();
+</script>
