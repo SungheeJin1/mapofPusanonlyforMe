@@ -22,7 +22,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = ROOT / "web" / "map-data.json"
 
-ORDER = ["금정7", "77", "100-1", "80", "31", "189"]
+ORDER = ["금정7", "77", "100-1", "80", "31", "189", "10", "144", "111-1"]
 LANDMARK = re.compile(r"(역$|역[.\s(]|시장|병원|대학교|구청|시청|터미널|해수욕장|차고지|종점|백화점|부산대)")
 
 

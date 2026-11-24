@@ -95,7 +95,8 @@ body {
   color: var(--ink); font: 600 20px/1 var(--font); cursor: pointer;
 }
 .zoom button + button { border-top: 1px solid var(--rule); }
-.zoom button.fit { font-size: 13px; }
+.zoom button.fit { font-size: 12px; }
+.zoom button[aria-pressed="true"] { background: var(--chip-on); color: var(--chip-on-ink); }
 .zoom button:focus-visible, .chip:focus-visible, .stop-row:focus-visible, .close:focus-visible, .grab:focus-visible {
   outline: 2px solid var(--focus); outline-offset: -2px;
 }
@@ -219,13 +220,14 @@ body {
 </style>
 
 <div id="app">
-  <canvas id="map" aria-label="부산 지도: 도시철도 1·2·3호선과 버스 금정7, 77, 100-1, 80, 31, 189번 노선" role="img"></canvas>
+  <canvas id="map" aria-label="부산 지도: 도시철도 1·2·3호선과 버스 금정7, 77, 100-1, 80, 31, 189, 10, 144, 111-1번 노선" role="img"></canvas>
   <div class="loading" id="loading">지도 불러오는 중…</div>
 
   <div class="zoom" role="group" aria-label="지도 확대·축소">
     <button type="button" id="zoom-in" aria-label="확대">+</button>
     <button type="button" id="zoom-out" aria-label="축소">−</button>
     <button type="button" id="zoom-fit" class="fit" aria-label="전체 보기">전체</button>
+    <button type="button" id="all-stops" class="fit" aria-pressed="false" aria-label="모든 정류장 보기">정류장</button>
   </div>
 
   <section class="sheet" aria-label="노선">
@@ -246,7 +248,7 @@ body {
       <span class="key">출근길 정류장</span>
       <a href="https://claude.ai/artifact/CKcUTudZuw55rrebUj5sCA" target="_blank" rel="noopener">과외 출퇴근길</a>
       <a href="https://claude.ai/artifact/AW6kDhbaxxutPa3r9nwZZB" target="_blank" rel="noopener">DYB 알바 버스 약도</a>
-      <span>· 확대하면 다른 정류장도 보여요</span>
+      <span>· 다른 정류장은 오른쪽 위 ‘정류장’</span>
     </p>
   </section>
 </div>
@@ -264,19 +266,21 @@ body {
   const FONT = C('--font');
 
   // Stops from the two commute pages (과외 출퇴근길, DYB 알바 버스 약도), with what happens there.
+  // name -> what happens there, and the routes it is used for (to pick the right pole)
   const COMMUTE = {
-    '장전중앙교회': '100-1 · 77 승차',
-    '엘지아파트': '과외 · 100-1',
-    '연산역.연산교차로': '100-1 하차 → 1호선',
-    '부산대역': '금정7 승차',
-    '새벽벌도서관.상남국제회관': '금정7 하차 · 기숙사',
-    '부산대학교정문': '80 하차',
-    '부산은행': '금정7 승차',
-    '사직운동장': '80 승차',
-    '부전교회': '77 · 31 · 189 환승',
-    '화신아파트': '189 승차',
-    '여명중학교': '189 하차 · DYB',
-    '서부시외버스터미널.사상역': '31 하차',
+    '장전중앙교회': ['100-1 · 77 승차', ['100-1', '77']],
+    '엘지아파트': ['과외 · 100-1', ['100-1']],
+    '연산역.연산교차로': ['100-1 하차 → 1호선', ['100-1']],
+    '부산대역': ['금정7 승차', ['금정7']],
+    '새벽벌도서관.상남국제회관': ['금정7 하차 · 기숙사', ['금정7']],
+    '부산대학교정문': ['80 · 144 · 111-1 하차', ['80', '144', '111-1']],
+    '부산은행': ['금정7 승차', ['금정7']],
+    '사직운동장': ['80 승차', ['80']],
+    '부전교회': ['77 · 31 · 189 · 10 환승', ['77', '31', '189', '10']],
+    '화신아파트': ['189 · 10 승차', ['189', '10']],
+    '여명중학교': ['189 · 10 승하차 · DYB', ['189', '10']],
+    '동래역': ['189 하차 → 144 · 111-1 승차', ['189', '144', '111-1']],
+    '서부시외버스터미널.사상역': ['31 하차', ['31']],
   };
 
   const canvas = document.getElementById('map');
@@ -287,6 +291,7 @@ body {
   let fitScale = 1;
   const sel = [];               // selected keys in order: 'bus:77', 'sub:1'
   let collapsed = false;        // stop list swiped away
+  let allStops = false;         // show every stop, not only the ones I use
   let hiQ = 0;
 
   fetch('map-data.json')
@@ -306,8 +311,8 @@ body {
     D.stops.forEach(s => {
       s.r = s.r || [];
       // a commute stop is named in COMMUTE and served by one of the routes it mentions
-      const note = COMMUTE[s.n];
-      s.c = note && (s.n !== '부산은행' || s.r.includes('금정7')) ? note : null;
+      const m = COMMUTE[s.n];
+      s.c = m && s.r.some(r => m[1].includes(r)) ? m[0] : null;
     });
     document.getElementById('loading').hidden = true;
     buildChips();
@@ -486,9 +491,10 @@ body {
     D.stops.forEach((st, i) => {
       if (any && !inPlay) return;                       // only subway selected
       if (inPlay && !inPlay.has(i)) return;
-      if (!inPlay && !st.c) {
-        if (st.p >= 2 && z < 2) return;
-        if (st.p === 1 && z < 3) return;
+      if (!st.c) {                                      // stops I don't use: only on request
+        if (!allStops) return;
+        if (!inPlay && st.p >= 2 && z < 2) return;
+        if (!inPlay && st.p === 1 && z < 3) return;
       }
       const [x, y] = toScreen(st.x, st.y);
       if (!onScreen(x, y)) return;
@@ -723,6 +729,11 @@ body {
   document.getElementById('zoom-in').addEventListener('click', () => flyTo({ s: clampS(view.s * 1.6), cx: view.cx, cy: view.cy }, true));
   document.getElementById('zoom-out').addEventListener('click', () => flyTo({ s: clampS(view.s / 1.6), cx: view.cx, cy: view.cy }, true));
   document.getElementById('zoom-fit').addEventListener('click', () => fit(true));
+  document.getElementById('all-stops').addEventListener('click', e => {
+    allStops = !allStops;
+    e.currentTarget.setAttribute('aria-pressed', String(allStops));
+    draw(true);
+  });
 
   // ---------- gestures ----------
   const ptrs = new Map();
