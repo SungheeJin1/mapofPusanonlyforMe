@@ -112,6 +112,7 @@ body {
   display: flex; flex-direction: column;
   max-height: 42%;
   overflow: hidden;
+  transition: max-height 0.25s ease;
   overscroll-behavior: contain;
 }
 /* route chips: one fixed-height row that only scrolls sideways */
@@ -143,6 +144,7 @@ body {
 .chip.sep { margin-left: 4px; }
 
 .detail {
+  -webkit-user-select: none; user-select: none;
   border-top: 1px solid var(--rule);
   display: flex; flex-direction: column;
   min-height: 0;
@@ -178,6 +180,11 @@ body {
   flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%;
   background: var(--chip); color: var(--ink); font: 500 18px/1 var(--font); cursor: pointer;
 }
+.sheet.full { max-height: calc(100% - 8px - env(safe-area-inset-top, 0px)); height: calc(100% - 8px - env(safe-area-inset-top, 0px)); }
+.sheet.full .detail { flex: 1; }
+/* in the half-height sheet the list does not scroll: a swipe up opens it full screen */
+.sheet:not(.full) .stops { overflow-y: hidden; touch-action: none; }
+.sheet.full .stops { touch-action: pan-y; }
 .stops {
   list-style: none; margin: 0;
   padding-block: 0 12px;
@@ -277,7 +284,8 @@ body {
     '부산은행': ['금정7 승차', ['금정7']],
     '사직운동장': ['80 승차', ['80']],
     '부전교회': ['77 · 31 · 189 · 10 환승', ['77', '31', '189', '10']],
-    '화신아파트': ['189 · 10 승차', ['189', '10']],
+    '화신아파트': ['189 · 10 승차 · 학원 가는 길', ['189', '10']],
+    '대선주조': ['189 · 10 · 학원 가는 길', ['189', '10']],
     '여명중학교': ['189 · 10 승하차 · DYB', ['189', '10']],
     '동래역': ['189 하차 → 144 · 111-1 승차', ['189', '144', '111-1']],
     '서부시외버스터미널.사상역': ['31 하차', ['31']],
@@ -290,7 +298,7 @@ body {
   const view = { cx: 0, cy: 0, s: 1 };
   let fitScale = 1;
   const sel = [];               // selected keys in order: 'bus:77', 'sub:1'
-  let collapsed = false;        // stop list swiped away
+  let sheetState = 'normal';    // stop list: 'normal' (half), 'full' (full screen), 'hidden'
   let allStops = false;         // show every stop, not only the ones I use
   let hiQ = 0;
 
@@ -629,7 +637,7 @@ body {
   }
   function toggle(key) {
     const i = sel.indexOf(key);
-    if (i >= 0) sel.splice(i, 1); else { sel.push(key); collapsed = false; }
+    if (i >= 0) sel.splice(i, 1); else { sel.push(key); if (sheetState === 'hidden') sheetState = 'normal'; }
     changed();
   }
   function clearAll() { sel.length = 0; changed(); }
@@ -644,10 +652,13 @@ body {
     const list = document.getElementById('d-stops');
     list.textContent = '';
     const key = focusKey();
-    if (!key) { det.hidden = true; hint.hidden = false; draw(true); return; }
+    const sheet = document.querySelector('.sheet');
+    if (!key) { det.hidden = true; hint.hidden = false; sheet.classList.remove('full'); sheetState = 'normal'; draw(true); return; }
     det.hidden = false; hint.hidden = true;
-    list.hidden = collapsed;
-    document.getElementById('grab').setAttribute('aria-label', collapsed ? '정류장 목록 펼치기' : '정류장 목록 접기');
+    sheet.classList.toggle('full', sheetState === 'full' && key.startsWith('bus:'));
+    list.hidden = sheetState === 'hidden';
+    document.getElementById('grab').setAttribute('aria-label',
+      sheetState === 'hidden' ? '정류장 목록 펼치기' : (sheetState === 'full' ? '정류장 목록 줄이기' : '정류장 목록 전체 화면'));
     const badge = document.getElementById('d-badge');
     const others = sel.length > 1 ? ` · 함께 선택 ${sel.length - 1}개` : '';
     if (key.startsWith('sub:')) {
@@ -679,6 +690,8 @@ body {
       if (xf.length) { const t = document.createElement('span'); t.className = 'xfer'; t.textContent = '+ ' + xf.join(', '); name.append(t); }
       row.append(idx, dot, name);
       row.addEventListener('click', () => {
+        if (performance.now() - swipedAt < 400) return;
+        if (sheetState === 'full') setSheet('normal');
         const s = Math.max(view.s, fitScale * 4);
         flyTo({ cx: st.x, cy: st.y + (sheetH() - 64) / 2 / s, s }, true);
       });
@@ -686,44 +699,57 @@ body {
       list.append(li);
     });
   }
-  function setCollapsed(v) {
-    if (collapsed === v) return;
-    collapsed = v;
+  function setSheet(v) {
+    if (sheetState === v) return;
+    sheetState = v;
     renderDetail();
   }
+  // one step per swipe: hidden <-> normal <-> full
+  const swipe = dir => {
+    swipedAt = performance.now();
+    if (dir < 0) setSheet(sheetState === 'hidden' ? 'normal' : 'full');
+    else setSheet(sheetState === 'full' ? 'normal' : 'hidden');
+  };
+  let swipedAt = 0;   // a swipe ends with a click; ignore that click
   document.getElementById('d-close').addEventListener('click', clearAll);
-  let swipedAt = 0;   // a swipe ends with a click on the handle; ignore that click
   document.getElementById('grab').addEventListener('click', () => {
     if (performance.now() - swipedAt < 400) return;
-    setCollapsed(!collapsed);
+    setSheet(sheetState === 'normal' ? 'full' : 'normal');
   });
 
-  // swipe the stop list down to hide it, up to bring it back
   (() => {
+    const list = document.getElementById('d-stops');
+    // handle, header, and the list while it is half height: pointer swipes
     let y0 = null, id = null;
-    const targets = [document.getElementById('grab'), document.getElementById('detail-head')];
-    const down = e => { if (e.target.closest('.close')) return; y0 = e.clientY; id = e.pointerId; e.currentTarget.setPointerCapture(id); };
+    const down = e => {
+      if (e.target.closest('.close')) return;
+      if (e.currentTarget === list && sheetState === 'full') return;   // full list scrolls natively
+      y0 = e.clientY; id = e.pointerId;
+      try { e.currentTarget.setPointerCapture(id); } catch (err) { /* pointer already gone */ }
+    };
     const up = e => {
       if (y0 === null || e.pointerId !== id) return;
       const dy = e.clientY - y0; y0 = null;
-      if (Math.abs(dy) > 36) swipedAt = performance.now();
-      if (dy > 36) setCollapsed(true);
-      else if (dy < -36) setCollapsed(false);
+      if (Math.abs(dy) > 30) swipe(dy);
     };
-    for (const t of targets) {
+    for (const t of [document.getElementById('grab'), document.getElementById('detail-head'), list]) {
       t.addEventListener('pointerdown', down);
       t.addEventListener('pointerup', up);
       t.addEventListener('pointercancel', () => { y0 = null; });
     }
-    // a downward fling on the list itself, when it is already scrolled to the top, also hides it
-    const list = document.getElementById('d-stops');
+    // full-screen list: a pull down from the top shrinks it back
     let ty = null;
-    list.addEventListener('touchstart', e => { ty = list.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
+    list.addEventListener('touchstart', e => { ty = sheetState === 'full' && list.scrollTop <= 0 ? e.touches[0].clientY : null; }, { passive: true });
     list.addEventListener('touchend', e => {
       if (ty === null) return;
-      if (e.changedTouches[0].clientY - ty > 60 && list.scrollTop <= 0) setCollapsed(true);
+      if (e.changedTouches[0].clientY - ty > 50 && list.scrollTop <= 0) swipe(1);
       ty = null;
     }, { passive: true });
+    // mouse wheel on the half-height list opens it full screen
+    list.addEventListener('wheel', e => {
+      if (sheetState === 'normal' && e.deltaY > 0) { e.preventDefault(); swipe(-1); }
+      else if (sheetState === 'full' && e.deltaY < 0 && list.scrollTop <= 0) { e.preventDefault(); swipe(1); }
+    }, { passive: false });
   })();
 
   document.getElementById('zoom-in').addEventListener('click', () => flyTo({ s: clampS(view.s * 1.6), cx: view.cx, cy: view.cy }, true));
