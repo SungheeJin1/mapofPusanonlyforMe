@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import build_map as bm  # noqa: E402
+from route_buses import SEGMENTS, cut  # noqa: E402
 from shapely.geometry import LineString  # noqa: E402
 from shapely.ops import linemerge  # noqa: E402
 
@@ -22,7 +23,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 OUT = ROOT / "web" / "map-data.json"
 
-ORDER = ["금정7", "77", "100-1", "80", "31", "189", "10", "144", "111-1"]
+ORDER = ["금정7", "77", "100-1", "80", "31", "189", "10", "144", "111-1", "54"]
 LANDMARK = re.compile(r"(역$|역[.\s(]|시장|병원|대학교|구청|시청|터미널|해수욕장|차고지|종점|백화점|부산대)")
 
 
@@ -74,7 +75,7 @@ def main():
     for no in ORDER:
         seq[no] = []
         for line in stop_data.get(no, []):
-            for s in line["stops"]:
+            for s in cut(no, line["stops"]):
                 x, y = bm.proj(s["lon"], s["lat"])
                 cand = [i for i in index.get(s["name"], []) if math.dist((stops[i]["x"], stops[i]["y"]), (x, y)) < 40]
                 if cand:
@@ -106,8 +107,11 @@ def main():
             continue
         geom = lines[0] if len(lines) == 1 else linemerge(lines)
         geom = geom.simplify(0.5)
-        first = stop_data[no][0]["stops"]
-        turn = next((s["name"] for s in first if s.get("rpoint")), first[len(first) // 2]["name"])
+        first = cut(no, stop_data[no][0]["stops"])
+        if no in SEGMENTS:   # a stretch, not a loop: "from -> to"
+            turn = first[-1]["name"]
+        else:
+            turn = next((s["name"] for s in first if s.get("rpoint")), first[len(first) // 2]["name"])
         km = sum(l.length for l in lines) / bm.SCALE * 6371.0 * math.cos(math.radians(35.17))
         parts = list(geom.geoms) if geom.geom_type == "MultiLineString" else [geom]
         buses.append({
@@ -118,6 +122,7 @@ def main():
             "turn": turn,
             "stops": seq[no],
             "km": round(km, 1),
+            "part": no in SEGMENTS,
         })
         print(f"  {no}: {len(seq[no])} stops, {km:.1f} km")
 

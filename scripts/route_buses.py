@@ -172,6 +172,25 @@ def drop_spurs(pts, max_len=150.0, tol=5.0):
     return pts
 
 
+# Routes used only for part of their length: draw just this stretch.
+# lineno -> (first stop name, text contained in the last stop's name)
+SEGMENTS = {"54": ("엘지아파트", "연산교차로")}
+
+
+def cut(lineno, stops):
+    """The stretch of `stops` the map should show for `lineno` (all of it by default)."""
+    if lineno not in SEGMENTS:
+        return stops
+    a, b = SEGMENTS[lineno]
+    for i, st in enumerate(stops):
+        if st["name"] == a:
+            for j in range(i + 1, len(stops)):
+                if b in stops[j]["name"]:
+                    return stops[i:j + 1]
+    print(f"  {lineno}: segment {a} -> {b} not found; keeping the whole route", file=sys.stderr)
+    return stops
+
+
 def main():
     roads = json.load(gzip.open(DATA / "roads.json.gz", "rt"))
     stops = json.loads((DATA / "bus_stops.json").read_text())
@@ -181,6 +200,7 @@ def main():
     for lineno, lines in stops.items():
         result[lineno] = []
         for line in lines:
+            line = {**line, "stops": cut(lineno, line["stops"])}
             if len(line["stops"]) < 2:
                 continue
             coords, fb = route_line(g, line["stops"])

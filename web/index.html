@@ -227,7 +227,7 @@ body {
 </style>
 
 <div id="app">
-  <canvas id="map" aria-label="부산 지도: 도시철도 1·2·3호선과 버스 금정7, 77, 100-1, 80, 31, 189, 10, 144, 111-1번 노선" role="img"></canvas>
+  <canvas id="map" aria-label="부산 지도: 도시철도 1·2·3호선과 버스 금정7, 77, 100-1, 80, 31, 189, 10, 144, 111-1, 54번 노선" role="img"></canvas>
   <div class="loading" id="loading">지도 불러오는 중…</div>
 
   <div class="zoom" role="group" aria-label="지도 확대·축소">
@@ -276,8 +276,9 @@ body {
   // name -> what happens there, and the routes it is used for (to pick the right pole)
   const COMMUTE = {
     '장전중앙교회': ['100-1 · 77 승차', ['100-1', '77']],
-    '엘지아파트': ['과외 · 100-1', ['100-1']],
-    '연산역.연산교차로': ['100-1 하차 → 1호선', ['100-1']],
+    '엘지아파트': ['과외 · 100-1 · 54', ['100-1', '54']],
+    '연산역.연산교차로': ['100-1 · 54 하차 → 1호선', ['100-1', '54']],
+    '연산교차로': ['100-1 · 54 하차 → 1호선', ['100-1', '54']],
     '부산대역': ['금정7 승차', ['금정7']],
     '새벽벌도서관.상남국제회관': ['금정7 하차 · 기숙사', ['금정7']],
     '부산대학교정문': ['80 · 144 · 111-1 하차', ['80', '144', '111-1']],
@@ -671,8 +672,8 @@ body {
     }
     const b = D.buses.find(x => x.no === key.slice(4));
     badge.className = 'badge bus'; badge.style.background = ''; badge.textContent = b.no;
-    document.getElementById('d-title').textContent = `${b.from} ↔ ${b.turn}`;
-    document.getElementById('d-sub').textContent = `정류장 ${b.stops.length}곳 · 한 바퀴 ${b.km} km` + others;
+    document.getElementById('d-title').textContent = b.part ? `${b.from} → ${b.turn}` : `${b.from} ↔ ${b.turn}`;
+    document.getElementById('d-sub').textContent = (b.part ? `타는 구간만 · 정류장 ${b.stops.length}곳 · ${b.km} km` : `정류장 ${b.stops.length}곳 · 한 바퀴 ${b.km} km`) + others;
     b.stops.forEach((i, k) => {
       const st = D.stops[i];
       const li = document.createElement('li');
@@ -683,8 +684,9 @@ body {
       const dot = document.createElement('span'); dot.className = 'dot';
       const name = document.createElement('span'); name.className = 'name'; name.textContent = st.n;
       const tag = (text, cls) => { const t = document.createElement('span'); t.className = 'tag' + (cls ? ' ' + cls : ''); t.textContent = text; name.append(t); };
-      if (k === 0) tag('기점');
-      else if (st.n === b.turn) tag('회차');
+      if (k === 0) tag(b.part ? '승차' : '기점');
+      else if (b.part && k === b.stops.length - 1) tag('하차');
+      else if (!b.part && st.n === b.turn) tag('회차');
       if (st.c) tag(st.c, 'c');
       const xf = st.r.filter(r => r !== b.no);
       if (xf.length) { const t = document.createElement('span'); t.className = 'xfer'; t.textContent = '+ ' + xf.join(', '); name.append(t); }
