@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+
+<response>
+<header>
+<resultCode>00</resultCode>
+<resultMsg>NORMAL SERVICE</resultMsg>
+</header>
+<body>
+<items>
+<item>
+<lineid>5200054000</lineid>
+<buslinenum>54</buslinenum>
+<bustype>일반버스</bustype>
+<startpoint>연산9동</startpoint>
+<endpoint>전포동</endpoint>
+<companyid>삼성</companyid>
+<headway>10</headway>
+<firsttime>04:50</firsttime>
+<endtime>22:30</endtime>
+<headwaypeak>5</headwaypeak>
+<headwaynorm>9</headwaynorm>
+<headwayholi>9</headwayholi>
+</item>
+</items>
+</body>
+</response>
