@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+
+<response>
+<header>
+<resultCode>00</resultCode>
+<resultMsg>NORMAL SERVICE</resultMsg>
+</header>
+<body>
+<items>
+<item>
+<lineid>5200111100</lineid>
+<buslinenum>111-1</buslinenum>
+<bustype>일반버스</bustype>
+<startpoint>연제공용차고지</startpoint>
+<endpoint>금곡동</endpoint>
+<companyid>국제</companyid>
+<firsttime>05:00</firsttime>
+<endtime>22:00</endtime>
+<headwaypeak>12</headwaypeak>
+<headwaynorm>12</headwaynorm>
+<headwayholi>15</headwayholi>
+</item>
+</items>
+</body>
+</response>
