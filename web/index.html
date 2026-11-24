@@ -369,6 +369,7 @@ body {
     let s = Math.min((W - side * 2) / (x1 - x0 || 1), (H - top - bottom) / (y1 - y0 || 1));
     s = Math.min(s, 12);
     if (!sel.length) fitScale = s;
+    else s = Math.min(s, fitScale * 4);   // short stretches (54) keep some surroundings
     flyTo({ s, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 - (top - bottom) / 2 / s }, animate);
   }
   let anim = 0;
