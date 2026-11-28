@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import build_map as bm  # noqa: E402
 from route_buses import SEGMENTS, cut  # noqa: E402
-from shapely.geometry import LineString  # noqa: E402
+from shapely.geometry import LineString, Point  # noqa: E402
 from shapely.ops import linemerge  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -48,6 +48,34 @@ def samples(line: LineString, step=40.0):
     return out
 
 
+def build_stations(subway):
+    """Subway stations on lines 1-3: [{n, x, y, l: [lines]}], one entry per name."""
+    src = DATA / "stations.json"
+    if not src.exists():
+        return []
+    lines = {k: linemerge(list(v.values())) for k, v in subway.items() if v}
+    merged = {}
+    for el in json.loads(src.read_text())["elements"]:
+        t = el.get("tags", {})
+        name = t.get("name:ko") or t.get("name")
+        if not name or "lat" not in el:
+            continue
+        name = re.sub(r"\s*\(.*\)$", "", name)
+        name = name if name.endswith("역") else name + "역"
+        x, y = bm.proj(el["lon"], el["lat"])
+        on = [k for k, g in lines.items() if g.distance(Point(x, y)) < 12]
+        if not on:
+            continue
+        m = merged.setdefault(name, {"n": name, "xs": [], "ys": [], "l": set()})
+        m["xs"].append(x); m["ys"].append(y); m["l"].update(on)
+    out = []
+    for m in merged.values():
+        out.append({"n": m["n"], "x": r1(sum(m["xs"]) / len(m["xs"])), "y": r1(sum(m["ys"]) / len(m["ys"])),
+                    "l": sorted(m["l"])})
+    print(f"  {len(out)} stations")
+    return out
+
+
 def main():
     print("land ...")
     land = bm.build_land()
@@ -64,6 +92,9 @@ def main():
         g = linemerge(list(v.values())).simplify(0.4)
         parts = list(g.geoms) if g.geom_type == "MultiLineString" else [g]
         sub[k] = {"d": line_d(g), "samples": [s for p in parts for s in samples(p)], "ends": ends[k]}
+
+    print("subway stations ...")
+    stations = build_stations(subway)
 
     print("bus stops ...")
     stop_data = json.loads((DATA / "bus_stops.json").read_text())
@@ -127,7 +158,8 @@ def main():
         print(f"  {no}: {len(seq[no])} stops, {km:.1f} km")
 
     OUT.parent.mkdir(exist_ok=True)
-    data = {"w": bm.WIDTH, "h": bm.HEIGHT, "land": bm.path_d(land, True), "subway": sub, "buses": buses, "stops": stops}
+    data = {"w": bm.WIDTH, "h": bm.HEIGHT, "land": bm.path_d(land, True), "subway": sub, "buses": buses,
+            "stops": stops, "stations": stations}
     OUT.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     print(f"wrote {OUT} ({OUT.stat().st_size / 1e3:.0f} KB): {len(stops)} stops, "
           f"{sum(s['p'] >= 2 for s in stops)} major")

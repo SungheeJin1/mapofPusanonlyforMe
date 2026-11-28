@@ -235,6 +235,7 @@ body {
     <button type="button" id="zoom-out" aria-label="축소">−</button>
     <button type="button" id="zoom-fit" class="fit" aria-label="전체 보기">전체</button>
     <button type="button" id="all-stops" class="fit" aria-pressed="false" aria-label="모든 정류장 보기">정류장</button>
+    <button type="button" id="all-stations" class="fit" aria-pressed="false" aria-label="모든 지하철역 보기">역</button>
   </div>
 
   <section class="sheet" aria-label="노선">
@@ -301,6 +302,7 @@ body {
   const sel = [];               // selected keys in order: 'bus:77', 'sub:1'
   let sheetState = 'normal';    // stop list: 'normal' (half), 'full' (full screen), 'hidden'
   let allStops = false;         // show every stop, not only the ones I use
+  let allStations = false;      // show every subway station name
   let hiQ = 0;
 
   fetch('map-data.json')
@@ -317,6 +319,7 @@ body {
     for (const k of Object.keys(D.subway)) P.sub[k] = new Path2D(D.subway[k].d);
     P.bus = {};
     for (const b of D.buses) P.bus[b.no] = new Path2D(b.d);
+    D.stations = D.stations || [];
     D.stops.forEach(s => {
       s.r = s.r || [];
       // a commute stop is named in COMMUTE and served by one of the routes it mentions
@@ -543,6 +546,30 @@ body {
     const order = vis.slice().sort((a, b) => b.rank - a.rank || b.st.r.length - a.st.r.length);
     for (const v of order.filter(v => v.st.c)) placeLabel(v, [v.st.n, v.st.c]);
 
+    // subway stations: all with the 역 button, or those of a selected line
+    const stVis = [];
+    for (const s of D.stations) {
+      const show = allStations || s.l.some(l => subs.includes(l));
+      if (!show) continue;
+      const [x, y] = toScreen(s.x, s.y);
+      if (!onScreen(x, y)) continue;
+      const xfer = s.l.length > 1;
+      stVis.push({ s, x, y, xfer, r: xfer ? 5.5 : 4 });
+    }
+    for (const v of stVis) boxes.push([v.x - v.r - 1, v.y - v.r - 1, v.x + v.r + 1, v.y + v.r + 1]);
+    const stLabels = [];
+    for (const v of stVis.slice().sort((a, b) => b.xfer - a.xfer)) {
+      const size = v.xfer ? 12.5 : 11.5, w = textW(v.s.n, size), h = size + 2;
+      const spots = [[v.x + v.r + 4, v.y - h / 2], [v.x - v.r - 4 - w, v.y - h / 2], [v.x - w / 2, v.y - v.r - 3 - h], [v.x - w / 2, v.y + v.r + 3]];
+      for (const [lx, ly] of spots) {
+        if (lx < 4 || lx + w > W - 4) continue;
+        if (hit(lx - 1, ly - 1, lx + w + 1, ly + h + 1)) continue;
+        boxes.push([lx, ly, lx + w, ly + h]);
+        stLabels.push({ x: lx, y: ly + h / 2, text: v.s.n, size, l: v.s.l });
+        break;
+      }
+    }
+
     // route-number badges along the lines (after commute labels so those always win)
     const badges = [];
     const badgeRun = (pts, text, kind, colour, spacing) => {
@@ -582,6 +609,11 @@ body {
         ctx.strokeStyle = v.st.p === 3 ? '#FFFFFF' : COL.busInk; ctx.stroke();
       }
     }
+    for (const v of stVis) {
+      ctx.beginPath(); ctx.arc(v.x, v.y, v.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFFFFF'; ctx.fill();
+      ctx.lineWidth = v.xfer ? 2.6 : 2.2; ctx.strokeStyle = v.xfer ? '#2B2A24' : COL.sub[v.s.l[0]]; ctx.stroke();
+    }
     for (const b of badges) {
       ctx.beginPath();
       if (b.kind === 'sub') {
@@ -612,6 +644,17 @@ body {
         ctx.fillText(t, l.x, y);
         y += (size + 2) / 2;
       });
+    }
+    paintStationLabels(stLabels);
+  }
+  function paintStationLabels(list) {
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    for (const l of list) {
+      ctx.font = `600 ${l.size}px ${FONT}`;
+      ctx.lineWidth = 3.4; ctx.strokeStyle = 'rgba(255, 253, 247, 0.96)';
+      ctx.strokeText(l.text, l.x, l.y);
+      ctx.fillStyle = l.l.length > 1 ? '#2B2A24' : COL.sub[l.l[0]];
+      ctx.fillText(l.text, l.x, l.y);
     }
   }
   function roundRect(x, y, w, h, r) {
@@ -758,6 +801,11 @@ body {
   document.getElementById('zoom-in').addEventListener('click', () => flyTo({ s: clampS(view.s * 1.6), cx: view.cx, cy: view.cy }, true));
   document.getElementById('zoom-out').addEventListener('click', () => flyTo({ s: clampS(view.s / 1.6), cx: view.cx, cy: view.cy }, true));
   document.getElementById('zoom-fit').addEventListener('click', () => fit(true));
+  document.getElementById('all-stations').addEventListener('click', e => {
+    allStations = !allStations;
+    e.currentTarget.setAttribute('aria-pressed', String(allStations));
+    draw(true);
+  });
   document.getElementById('all-stops').addEventListener('click', e => {
     allStops = !allStops;
     e.currentTarget.setAttribute('aria-pressed', String(allStops));
