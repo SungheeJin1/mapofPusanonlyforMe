@@ -41,6 +41,9 @@ jobs:
           if stale data/bus_list.json scripts/overpass_bus_list.txt; then
             fetch scripts/overpass_bus_list.txt data/bus_list.json
           fi
+          if stale data/stations.json scripts/overpass_stations.txt; then
+            fetch scripts/overpass_stations.txt data/stations.json
+          fi
           if stale data/roads.json.gz scripts/overpass_roads.txt scripts/compact_roads.py; then
             fetch scripts/overpass_roads.txt /tmp/roads.json
             python3 scripts/compact_roads.py /tmp/roads.json data/roads.json.gz

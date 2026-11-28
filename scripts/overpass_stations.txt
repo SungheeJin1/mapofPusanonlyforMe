@@ -1,0 +1,7 @@
+[out:json][timeout:180];
+(
+  node["railway"="station"]["station"="subway"](35.00,128.85,35.40,129.28);
+  node["railway"="station"]["subway"="yes"](35.00,128.85,35.40,129.28);
+  node["public_transport"="station"]["subway"="yes"](35.00,128.85,35.40,129.28);
+);
+out;
